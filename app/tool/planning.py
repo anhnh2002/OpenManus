@@ -1,6 +1,7 @@
 # tool/planning.py
 from typing import Dict, List, Literal, Optional
 
+from app.schema import Plan
 from app.exceptions import ToolError
 from app.tool.base import BaseTool, ToolResult
 
@@ -66,7 +67,7 @@ class PlanningTool(BaseTool):
         "additionalProperties": False,
     }
 
-    plans: dict = {}  # Dictionary to store plans by plan_id
+    plans: Dict[str, Plan] = {}  # Dictionary to store plans by plan_id
     _current_plan_id: Optional[str] = None  # Track the current active plan
 
     async def execute(
@@ -142,13 +143,15 @@ class PlanningTool(BaseTool):
             )
 
         # Create a new plan with initialized step statuses
-        plan = {
+        params = {
             "plan_id": plan_id,
             "title": title,
             "steps": steps,
             "step_statuses": ["not_started"] * len(steps),
             "step_notes": [""] * len(steps),
+            "step_results": [""] * len(steps),
         }
+        plan = Plan(**params)
 
         self.plans[plan_id] = plan
         self._current_plan_id = plan_id  # Set as active plan
@@ -170,7 +173,7 @@ class PlanningTool(BaseTool):
         plan = self.plans[plan_id]
 
         if title:
-            plan["title"] = title
+            plan.title = title
 
         if steps:
             if not isinstance(steps, list) or not all(
@@ -181,9 +184,9 @@ class PlanningTool(BaseTool):
                 )
 
             # Preserve existing step statuses for unchanged steps
-            old_steps = plan["steps"]
-            old_statuses = plan["step_statuses"]
-            old_notes = plan["step_notes"]
+            old_steps = plan.steps
+            old_statuses = plan.step_statuses
+            old_notes = plan.step_notes
 
             # Create new step statuses and notes
             new_statuses = []
@@ -198,9 +201,9 @@ class PlanningTool(BaseTool):
                     new_statuses.append("not_started")
                     new_notes.append("")
 
-            plan["steps"] = steps
-            plan["step_statuses"] = new_statuses
-            plan["step_notes"] = new_notes
+            plan.steps = steps
+            plan.step_statuses = new_statuses
+            plan.step_notes = new_notes
 
         return ToolResult(
             output=f"Plan updated successfully: {plan_id}\n\n{self._format_plan(plan)}"
@@ -217,9 +220,9 @@ class PlanningTool(BaseTool):
         for plan_id, plan in self.plans.items():
             current_marker = " (active)" if plan_id == self._current_plan_id else ""
             completed = sum(
-                1 for status in plan["step_statuses"] if status == "completed"
+                1 for status in plan.step_statuses if status == "completed"
             )
-            total = len(plan["steps"])
+            total = len(plan.steps)
             progress = f"{completed}/{total} steps completed"
             output += f"• {plan_id}{current_marker}: {plan['title']} - {progress}\n"
 
@@ -260,6 +263,7 @@ class PlanningTool(BaseTool):
         step_index: Optional[int],
         step_status: Optional[str],
         step_notes: Optional[str],
+        step_result: Optional[str]
     ) -> ToolResult:
         """Mark a step with a specific status and optional notes."""
         if not plan_id:
@@ -278,7 +282,7 @@ class PlanningTool(BaseTool):
 
         plan = self.plans[plan_id]
 
-        if step_index < 0 or step_index >= len(plan["steps"]):
+        if step_index < 0 or step_index >= len(plan.steps):
             raise ToolError(
                 f"Invalid step_index: {step_index}. Valid indices range from 0 to {len(plan['steps'])-1}."
             )
@@ -294,10 +298,13 @@ class PlanningTool(BaseTool):
             )
 
         if step_status:
-            plan["step_statuses"][step_index] = step_status
+            plan.step_statuses[step_index] = step_status
 
         if step_notes:
-            plan["step_notes"][step_index] = step_notes
+            plan.step_notes[step_index] = step_notes
+
+        if step_result:
+            plan.step_results[step_index] = step_result
 
         return ToolResult(
             output=f"Step {step_index} updated in plan '{plan_id}'.\n\n{self._format_plan(plan)}"
@@ -319,20 +326,20 @@ class PlanningTool(BaseTool):
 
         return ToolResult(output=f"Plan '{plan_id}' has been deleted.")
 
-    def _format_plan(self, plan: Dict) -> str:
+    def _format_plan(self, plan: Plan) -> str:
         """Format a plan for display."""
         output = f"Plan: {plan['title']} (ID: {plan['plan_id']})\n"
         output += "=" * len(output) + "\n\n"
 
         # Calculate progress statistics
-        total_steps = len(plan["steps"])
-        completed = sum(1 for status in plan["step_statuses"] if status == "completed")
+        total_steps = len(plan.steps)
+        completed = sum(1 for status in plan.step_statuses if status == "completed")
         in_progress = sum(
-            1 for status in plan["step_statuses"] if status == "in_progress"
+            1 for status in plan.step_statuses if status == "in_progress"
         )
-        blocked = sum(1 for status in plan["step_statuses"] if status == "blocked")
+        blocked = sum(1 for status in plan.step_statuses if status == "blocked")
         not_started = sum(
-            1 for status in plan["step_statuses"] if status == "not_started"
+            1 for status in plan.step_statuses if status == "not_started"
         )
 
         output += f"Progress: {completed}/{total_steps} steps completed "
@@ -346,8 +353,8 @@ class PlanningTool(BaseTool):
         output += "Steps:\n"
 
         # Add each step with its status and notes
-        for i, (step, status, notes) in enumerate(
-            zip(plan["steps"], plan["step_statuses"], plan["step_notes"])
+        for i, (step, status, notes, result) in enumerate(
+            zip(plan.steps, plan.step_statuses, plan.step_notes, plan.step_results)
         ):
             status_symbol = {
                 "not_started": "[ ]",
@@ -356,7 +363,7 @@ class PlanningTool(BaseTool):
                 "blocked": "[!]",
             }.get(status, "[ ]")
 
-            output += f"{i}. {status_symbol} {step}\n"
+            output += f"{i}. {status_symbol} {step}\nResult:\n\"\"\"\n{result}\n\"\"\"\\n\n" if result else f"{i}. {status_symbol} {step}\n\n"
             if notes:
                 output += f"   Notes: {notes}\n"
 

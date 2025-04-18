@@ -113,7 +113,7 @@ class BaseAgent(BaseModel, ABC):
         kwargs = {"base64_image": base64_image, **(kwargs if role == "tool" else {})}
         self.memory.add_message(message_map[role](content, **kwargs))
 
-    async def run(self, request: Optional[str] = None) -> str:
+    async def run(self, request: Optional[str] = None, **kwargs) -> str:
         """Execute the agent's main loop asynchronously.
 
         Args:
@@ -151,6 +151,9 @@ class BaseAgent(BaseModel, ABC):
                 self.state = AgentState.IDLE
                 results.append(f"Terminated: Reached max steps ({self.max_steps})")
         await SANDBOX_CLIENT.cleanup()
+
+        if "return_last_step_result_only" in kwargs and kwargs["return_last_step_result_only"]:
+            return results[-1] if results else "No steps executed"
         return "\n".join(results) if results else "No steps executed"
 
     @abstractmethod

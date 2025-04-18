@@ -185,3 +185,12 @@ class Memory(BaseModel):
     def to_dict_list(self) -> List[dict]:
         """Convert messages to list of dicts"""
         return [msg.to_dict() for msg in self.messages]
+
+
+class Plan(BaseModel):
+    plan_id: str
+    title: str
+    steps: List[str]
+    step_statuses: List[Literal["not_started", "in_progress", "completed", "blocked"]]
+    step_notes: List[str]
+    step_results: List[str]
